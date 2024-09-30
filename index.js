@@ -6,7 +6,8 @@ const app = express();
 // Connet to mongodb
 const {MongoClient} = require('mongodb');
 const dns = require('dns')
-const urlparser = require('url')
+//const urlparser = require('url')
+const { URL } = require('url');
 const client = new MongoClient(process.env.DB_URL);
 const db = client.db('urlshortner');
 const urls = db.collection('urls')
@@ -25,34 +26,43 @@ app.get('/', function(req, res) {
 });
 
 // Your first API endpoint
-app.get('/api/shorturl', function(req, res) {
-  console.log(req.body)
-  const url = req.body.url
-  const dnslookup = dns.lookup(urlparser.parse(url).hostname, async(err, address) => {
-    if (!address){
-      res.json({error: 'Invalid URL'})
-    } else {
-      const urlCount = await urls.countDocuments({})
+app.post('/api/shorturl', async (req, res) => {
+  const url = req.body.url;
+
+  dns.lookup(new URL(url).hostname, async (err, address) => {
+    if (err || !address) {
+      return res.json({ error: 'Invalid URL' });
+    }
+
+    try {
+      const urlCount = await urls.countDocuments({});
       const urlDoc = {
         url,
         short_url: urlCount
-      }
+      };
 
       const result = await urls.insertOne(urlDoc);
       console.log(result);
-      res.json({original_url: url, short_url: urlCount})
-
+      res.json({ original_url: url, short_url: urlCount });
+    } catch (error) {
+      console.error('Error creating short URL:', error);
+      res.status(500).json({ error: 'Server Error' });
     }
-  })
-  
+  });
 });
 
 
-app.get('/api/short_url/:short_url', async(req, res) => {
-  const shorturl = req.params.short_url
-  const urlDoc = await urls.findOne({short_url: +shorturl})
-  res.redirect(urlDoc.url)
-})
+// Redirect to original URL using short URL
+app.get('/api/shorturl/:short_url', async (req, res) => {
+  const shortUrl = req.params.short_url;
+  const urlDoc = await urls.findOne({ short_url: +shortUrl });
+
+  if (urlDoc) {
+    res.redirect(urlDoc.url);
+  } else {
+    res.status(404).json({ error: 'Short URL not found' });
+  }
+});
 
 
 app.listen(port, function() {
